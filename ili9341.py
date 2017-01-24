@@ -1,3 +1,4 @@
+# Derived from - the library by Tony DiCola
 # Copyright (c) 2014 Adafruit Industries
 # Author: Tony DiCola
 #
@@ -20,7 +21,6 @@
 # THE SOFTWARE.
 import numbers
 import time
-import numpy as np
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -95,6 +95,15 @@ ILI9341_MAGENTA     = 0xF81F
 ILI9341_YELLOW      = 0xFFE0
 ILI9341_WHITE       = 0xFFFF
 
+# for the rotation definition
+ILI9341_MADCTL_MY = 0x80
+ILI9341_MADCTL_MX = 0x40
+ILI9341_MADCTL_MV = 0x20
+ILI9341_MADCTL_ML = 0x10
+ILI9341_MADCTL_RGB = 0x00
+ILI9341_MADCTL_BGR = 0x08
+ILI9341_MADCTL_MH = 0x04
+
 
 def color565(r, g, b):
 	"""Convert red, green, blue components to a 16-bit 565 RGB value. Components
@@ -142,7 +151,7 @@ class ili9341(object):
 		self._col = 0
 		self._color = 0
 		self._bground = 0xf100
-		self._font = ImageFont.truetype('Lekton-Regular.ttf', 60)
+		self._font = ImageFont.truetype('/home/pi/python/OpenSans-Regular.ttf', 60)
 
 
 	def send(self, data, is_data=True, chunk_size=4096):
@@ -329,6 +338,7 @@ class ili9341(object):
 			w = self.width  - x
 		if (y + h - 1) >= self.height:
 			h = self.height - y
+
 		self.set_window(x,y,x+w-1,y+h-1);
 		self.data(buff)
 
@@ -387,9 +397,11 @@ class ili9341(object):
 		self.draw_bmp(x,y,w,h,img_buf)
 		
 	def text(self, text, align='left', angle=0):
-		# make a new square image the size of the display height
-		# to allow rotated text to be as wide as the height
-		img = Image.new('RGB', (self.height, self.height), color_rgb(self._bground))
+		# make a new square image the size of the largest
+		# dislay dimension to support rotated text
+		limit = max(self.height,self.width)
+		# img = Image.new('RGB', (limit, limit), color_rgb(self._bground))
+		img = Image.new('RGBA', (limit, limit))
 		# make the draw object
 		draw = ImageDraw.Draw(img)
 		# get the width and height of the text image
@@ -403,3 +415,23 @@ class ili9341(object):
 		# return the image object and the width and height
 		return img, width, height
 			
+	def set_rotation(self, m):
+		self.command(ILI9341_MADCTL)
+		rotation = m % 4 # can't be higher than 3
+		if rotation == 0:
+			self.data(ILI9341_MADCTL_MX | ILI9341_MADCTL_BGR)
+			self.width  = ILI9341_TFTWIDTH
+			self.height = ILI9341_TFTHEIGHT
+		elif rotation == 1:
+			self.data(ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+			self.width  = ILI9341_TFTHEIGHT
+			self.height = ILI9341_TFTWIDTH
+		elif rotation == 2:
+			self.data(ILI9341_MADCTL_MY | ILI9341_MADCTL_BGR)
+			self.width  = ILI9341_TFTWIDTH
+			self.height = ILI9341_TFTHEIGHT
+		elif rotation == 3:
+			self.data(ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
+			self.width  = ILI9341_TFTHEIGHT
+			self.height = ILI9341_TFTWIDTH
+
