@@ -21,11 +21,12 @@
 # THE SOFTWARE.
 import numbers
 import time
+import RPi.GPIO as GPIO
+import spidev as SPI
 
 from PIL import Image, ImageDraw, ImageFont
 
-import Adafruit_GPIO as GPIO
-import Adafruit_GPIO.SPI as SPI
+
 
 # Constants for interacting with display registers.
 ILI9341_TFTWIDTH    = 240
@@ -121,7 +122,7 @@ def color_rgb(color):
 class ili9341(object):
 	"""Representation of an ILI9341 TFT LCD."""
 
-	def __init__(self, dc, spi, rst=None, gpio=None, width=ILI9341_TFTWIDTH,
+	def __init__(self, dc, spi, rst=None, width=ILI9341_TFTWIDTH,
 		height=ILI9341_TFTHEIGHT):
 		"""Create an instance of the display using SPI communication.  Must
 		provide the GPIO pin number for the D/C pin and the SPI driver.  Can
@@ -131,20 +132,20 @@ class ili9341(object):
 		self._dc = dc
 		self._rst = rst
 		self._spi = spi
-		self._gpio = gpio
+		self._gpio = GPIO
 		self.width = width
 		self.height = height
-		if self._gpio is None:
-		    self._gpio = GPIO.get_platform_gpio()
+		self._gpio.setmode(GPIO.BCM)
 		# Set DC as output.
 		self._gpio.setup(dc, GPIO.OUT)
 		# Setup reset as output (if provided).
 		if rst is not None:
 		    self._gpio.setup(rst, GPIO.OUT)
+			
 		# Set SPI to mode 0, MSB first.
-		spi.set_mode(0)
-		spi.set_bit_order(SPI.MSBFIRST)
-		spi.set_clock_hz(64000000)
+		spi.open(0,0)
+		spi.mode = 0
+		spi.max_speed_hz = 32000000
 		# Create an image buffer.
 		self.buffer = bytearray(width*height*2)
 		self._row = 0
@@ -167,8 +168,8 @@ class ili9341(object):
 		    data = [data & 0xFF]
 		# Write data a chunk at a time.
 		for start in range(0, len(data), chunk_size):
-		    end = min(start+chunk_size, len(data))
-		    self._spi.write(data[start:end])
+			end = min(start+chunk_size, len(data))
+			self._spi.writebytes(data[start:end])
 
 	def command(self, data):
 		"""Write a byte or array of bytes to the display as command data."""
@@ -181,11 +182,11 @@ class ili9341(object):
 	def reset(self):
 		"""Reset the display, if reset pin is connected."""
 		if self._rst is not None:
-		    self._gpio.set_high(self._rst)
+		    self._gpio.output(self._rst, GPIO.HIGH)
 		    time.sleep(0.005)
-		    self._gpio.set_low(self._rst)
+		    self._gpio.output(self._rst, GPIO.LOW)
 		    time.sleep(0.02)
-		    self._gpio.set_high(self._rst)
+		    self._gpio.output(self._rst, GPIO.HIGH)
 		    time.sleep(0.150)
 
 	def _init(self):
@@ -297,6 +298,7 @@ class ili9341(object):
 			x1 = self.width-1
 		if y1 is None:
 			y1 = self.height-1
+		
 		self.command(ILI9341_CASET)		# Column addr set
 		self.data(x0 >> 8)
 		self.data(x0)				    # XSTART
@@ -308,7 +310,6 @@ class ili9341(object):
 		self.data(y1 >> 8)
 		self.data(y1)                    # YEND
 		self.command(ILI9341_RAMWR)        # write to RAM
-
 		
 	def pixel(self, x, y, color):
 		"""Set an individual pixel to color"""
@@ -326,20 +327,22 @@ class ili9341(object):
 			w = self.width  - x
 		if (y + h - 1) >= self.height:
 			h = self.height - y
-		self.set_window(x,y,x+w-1,y+h-1);
+		self.set_window(x,y,x+w-1,y+h-1)
 		b=[color>>8, color & 0xff]*w*h
 		self.data(b)
 
 	def draw_bmp(self,x,y,w,h,buff):
 		"""Draw the contents of buff on the screen"""
+		# self.dump(buff)
+
 		if((x >= self.width) or (y >= self.height)):
 			return
 		if (x + w - 1) >= self.width:
 			w = self.width  - x
 		if (y + h - 1) >= self.height:
 			h = self.height - y
-
-		self.set_window(x,y,x+w-1,y+h-1);
+			
+		self.set_window(x,y,x+w-1,y+h-1)
 		self.data(buff)
 
 	def fill_screen(self,color):
@@ -347,7 +350,7 @@ class ili9341(object):
 		self.draw_block(0,0,self.width,self.height,color)
 		
 	def p_char(self, ch):
-		"""Print a single char at the location determined by globals row and color
+		"""Print a single char at the location determined by globals row and col
 			row and col will be auto incremented to wrap horizontally and vertically"""
 		fp = (ord(ch)-0x20) * 5
 		f = open('/home/pi/python/lib/font5x7.fnt','rb')
@@ -394,6 +397,7 @@ class ili9341(object):
 			rgb = color565(r,g,b)
 			img_buf.extend([rgb >> 8])
 			img_buf.extend([rgb & 0xff])
+			
 		self.draw_bmp(x,y,w,h,img_buf)
 		
 	def text(self, text, align='left', angle=0):
@@ -434,4 +438,15 @@ class ili9341(object):
 			self.data(ILI9341_MADCTL_MX | ILI9341_MADCTL_MY | ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR)
 			self.width  = ILI9341_TFTHEIGHT
 			self.height = ILI9341_TFTWIDTH
-
+			
+	def dump(self, buf, cols=20):
+		count = 0
+		line = '{:08} '.format(count)
+		for data in (buf):
+			line += ' {:02X}'.format(data)
+			count += 1
+			if count % cols == 0:
+				print(line)
+				line = '{:08} '.format(count)
+			
+		
